@@ -1,0 +1,10 @@
+uv.lock
+.venv/
+.crossnote/
+
+source/
+
+tmp*
+
+*.egg-info/
+__pycache__/

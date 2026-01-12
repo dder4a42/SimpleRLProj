@@ -1,0 +1,16 @@
+# Core
+torch==2.2.2
+numpy==1.26.4
+psutil==5.9.8
+pyyaml==6.0.1
+opencv-python-headless==4.9.0.80
+
+# Gym / Atari
+# accept-rom-license is required to load ALE ROMs like Pong
+# If you need CPU-only build, torch above is fine; for CUDA, install the matching torch/cu wheels.
+gymnasium[atari,accept-rom-license]==0.29.1
+ale-py==0.8.1
+
+# Logging
+tensorboard==2.16.2
+nvidia-ml-py3==7.352.0

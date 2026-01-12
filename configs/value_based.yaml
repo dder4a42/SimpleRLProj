@@ -1,0 +1,62 @@
+# Value-based RL Configuration for Atari (vectorized async envs)
+
+# Environment
+env:
+  name: "ALE/Boxing-v5"
+  frameskip: 4
+  repeat_action_probability: 0.25  # sticky actions
+  frame_stack: 4
+
+# Network
+network:
+  conv_channels: [32, 64, 64]
+  fc_hidden: 512
+
+# Training (step-based)
+training:
+  method: "standard"           # "standard" (soft Q) or "iqn" (distributional)
+  total_steps: 10000000          # total environment steps across all vector envs
+  gamma: 0.99
+  alpha: 0.05                   # base entropy temperature for soft backups
+  alpha_start: 0.05             # alpha schedule: start value
+  alpha_final: 0.02             # alpha schedule: final value
+  alpha_decay_steps: 4000000     # steps over which alpha decays
+  lr: 0.00005
+  lr_final: 0.00001             # final learning rate for linear decay
+  lr_decay_steps: 10000000      # steps over which lr decays linearly; default to total_steps
+  batch_size: 1024
+  buffer_size: 600000
+  warmup_steps: 50000           # begin updates after this many steps collected
+  target_update_freq: 10000     # sync target every N steps (hard update)
+  target_update_mode: "soft"    # "hard" or "soft" (Polyak)
+  tau: 0.003                    # Polyak factor if soft update is enabled
+  grad_clip: 10.0
+  updates_per_step: 1           # gradient updates per env step (aggregate)
+  use_amp: true                 # enable CUDA AMP (mixed precision)
+  reward_clip: [-1.0, 1.0]      # optional training-time reward clipping; set to null to disable
+  target_clip: null             # optional target clamp magnitude; set to null to disable
+
+# IQN-specific settings (used when training.method == "iqn")
+iqn:
+  num_quantiles: 32             # number of quantiles for prediction and target
+  embed_dim: 64                 # cosine embedding size for taus
+  kappa: 1.0                    # Huber threshold for quantile regression
+  eval_quantiles: 32            # number of quantiles used to compute expected Q for action selection
+
+# Logging (step-based intervals)
+logging:
+  log_interval: 10000           # log perf stats every N steps (lower for more frequent console updates)
+  save_interval: 500000         # save checkpoint every N steps
+  log_dir: "logs"
+  save_dir: "checkpoints"
+
+# Resume settings: set "checkpoint" to a file path to resume
+resume:
+  checkpoint: null              # e.g., "checkpoints/ALE_Boxing-v5-20251221-120000/checkpoint_step500000.pt"
+
+# Parallel envs
+parallel:
+  num_envs: 16
+  async: true                   # hint only; AsyncVectorEnv is used
+  seed: 42
+  enable_cpu_monitor: true      # reserved flag; metrics are always collected
