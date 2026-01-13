@@ -35,6 +35,9 @@ def load_config(config_path: str) -> Dict[str, Any]:
     # Handle inheritance
     if "extends" in config:
         base_path = config.pop("extends")
+        # Add .yaml extension if not present
+        if not base_path.endswith(".yaml") and not base_path.endswith(".yml"):
+            base_path = base_path + ".yaml"
         base_config = load_config(base_path)
         config = merge_configs(base_config, config)
 

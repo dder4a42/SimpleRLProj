@@ -5,6 +5,13 @@ import gymnasium as gym
 import numpy as np
 from collections import deque
 
+# Register ALE environments with gymnasium
+try:
+    import ale_py
+    gym.register_envs(ale_py)
+except Exception:
+    pass  # ale-py not installed or already registered
+
 
 class AtariPreprocess(gym.Wrapper):
     """Atari environment preprocessing: grayscale, resize, frame stacking."""

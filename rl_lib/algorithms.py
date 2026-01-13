@@ -91,18 +91,26 @@ class DQNTrainer(BaseTrainer):
         """
         obs, act, rew, nxt, done = batch
 
-        # Pinned-memory transfers
-        obs_cpu = torch.from_numpy(obs).pin_memory()
-        nxt_cpu = torch.from_numpy(nxt).pin_memory()
-        act_cpu = torch.from_numpy(act).pin_memory()
-        rew_cpu = torch.from_numpy(rew).pin_memory()
-        done_cpu = torch.from_numpy(done).pin_memory()
+        # Transfers (use pinned memory only for CUDA)
+        obs_cpu = torch.from_numpy(obs)
+        nxt_cpu = torch.from_numpy(nxt)
+        act_cpu = torch.from_numpy(act)
+        rew_cpu = torch.from_numpy(rew)
+        done_cpu = torch.from_numpy(done)
 
-        obs = obs_cpu.to(self.device, non_blocking=True)
-        nxt = nxt_cpu.to(self.device, non_blocking=True)
-        act = act_cpu.to(self.device, dtype=torch.long, non_blocking=True)
-        rew = rew_cpu.to(self.device, dtype=torch.float32, non_blocking=True)
-        done = done_cpu.to(self.device, dtype=torch.float32, non_blocking=True)
+        if self.device == "cuda":
+            obs_cpu = obs_cpu.pin_memory()
+            nxt_cpu = nxt_cpu.pin_memory()
+            act_cpu = act_cpu.pin_memory()
+            rew_cpu = rew_cpu.pin_memory()
+            done_cpu = done_cpu.pin_memory()
+
+        non_blocking = (self.device == "cuda")
+        obs = obs_cpu.to(self.device, non_blocking=non_blocking)
+        nxt = nxt_cpu.to(self.device, non_blocking=non_blocking)
+        act = act_cpu.to(self.device, dtype=torch.long, non_blocking=non_blocking)
+        rew = rew_cpu.to(self.device, dtype=torch.float32, non_blocking=non_blocking)
+        done = done_cpu.to(self.device, dtype=torch.float32, non_blocking=non_blocking)
 
         self.opt.zero_grad(set_to_none=True)
 
@@ -164,8 +172,10 @@ class DQNTrainer(BaseTrainer):
         """
         alpha = max(self._get_alpha(self._get_training_step()), 1e-6)
 
-        obs_cpu = torch.from_numpy(obs).pin_memory()
-        obs = obs_cpu.to(self.device, non_blocking=True)
+        obs_cpu = torch.from_numpy(obs)
+        if self.device == "cuda":
+            obs_cpu = obs_cpu.pin_memory()
+        obs = obs_cpu.to(self.device, non_blocking=(self.device == "cuda"))
 
         with torch.no_grad():
             logits = self.q(obs) / alpha
@@ -235,18 +245,26 @@ class IQNTrainer(DQNTrainer):
         """
         obs, act, rew, nxt, done = batch
 
-        # Pinned-memory transfers
-        obs_cpu = torch.from_numpy(obs).pin_memory()
-        nxt_cpu = torch.from_numpy(nxt).pin_memory()
-        act_cpu = torch.from_numpy(act).pin_memory()
-        rew_cpu = torch.from_numpy(rew).pin_memory()
-        done_cpu = torch.from_numpy(done).pin_memory()
+        # Transfers (use pinned memory only for CUDA)
+        obs_cpu = torch.from_numpy(obs)
+        nxt_cpu = torch.from_numpy(nxt)
+        act_cpu = torch.from_numpy(act)
+        rew_cpu = torch.from_numpy(rew)
+        done_cpu = torch.from_numpy(done)
 
-        obs = obs_cpu.to(self.device, non_blocking=True)
-        nxt = nxt_cpu.to(self.device, non_blocking=True)
-        act = act_cpu.to(self.device, dtype=torch.long, non_blocking=True)
-        rew = rew_cpu.to(self.device, dtype=torch.float32, non_blocking=True)
-        done = done_cpu.to(self.device, dtype=torch.float32, non_blocking=True)
+        if self.device == "cuda":
+            obs_cpu = obs_cpu.pin_memory()
+            nxt_cpu = nxt_cpu.pin_memory()
+            act_cpu = act_cpu.pin_memory()
+            rew_cpu = rew_cpu.pin_memory()
+            done_cpu = done_cpu.pin_memory()
+
+        non_blocking = (self.device == "cuda")
+        obs = obs_cpu.to(self.device, non_blocking=non_blocking)
+        nxt = nxt_cpu.to(self.device, non_blocking=non_blocking)
+        act = act_cpu.to(self.device, dtype=torch.long, non_blocking=non_blocking)
+        rew = rew_cpu.to(self.device, dtype=torch.float32, non_blocking=non_blocking)
+        done = done_cpu.to(self.device, dtype=torch.float32, non_blocking=non_blocking)
 
         self.opt.zero_grad(set_to_none=True)
 
@@ -302,8 +320,10 @@ class IQNTrainer(DQNTrainer):
         Returns:
             Actions as numpy array
         """
-        obs_cpu = torch.from_numpy(obs).pin_memory()
-        obs = obs_cpu.to(self.device, non_blocking=True)
+        obs_cpu = torch.from_numpy(obs)
+        if self.device == "cuda":
+            obs_cpu = obs_cpu.pin_memory()
+        obs = obs_cpu.to(self.device, non_blocking=(self.device == "cuda"))
 
         with torch.no_grad():
             q_vals = self.q.expected_q(obs, num_quantiles=self.eval_quantiles)
