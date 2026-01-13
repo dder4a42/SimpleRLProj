@@ -51,6 +51,7 @@ class BaseTrainer(ABC):
         self.frame_stack = int(self.env_cfg.get("frame_stack", 4))
         self.frameskip = int(self.env_cfg.get("frameskip", 4))
         self.repeat_prob = float(self.env_cfg.get("repeat_action_probability", 0.25))
+        self.max_episode_steps = int(self.env_cfg.get("max_episode_steps", 0))
 
         self.num_envs = int(self.parallel_cfg.get("num_envs", 8))
         self.seed_base = int(self.parallel_cfg.get("seed", 42))
@@ -115,7 +116,14 @@ class BaseTrainer(ABC):
             AsyncVectorEnv: Vectorized environment
         """
         envs = AsyncVectorEnv([
-            make_env(self.env_name, self.seed_base + i, self.frameskip, self.repeat_prob, self.frame_stack)
+            make_env(
+                self.env_name,
+                self.seed_base + i,
+                self.frameskip,
+                self.repeat_prob,
+                self.frame_stack,
+                max_episode_steps=(self.max_episode_steps if self.max_episode_steps > 0 else None),
+            )
             for i in range(self.num_envs)
         ])
         return envs
@@ -336,8 +344,15 @@ class BaseTrainer(ABC):
 
             # Log step-level metrics
             try:
+                # Log raw (unclipped) step rewards
                 writer.add_scalar("train/step_reward_mean", float(np.mean(rew)), step)
                 writer.add_scalar("train/step_reward_sum", float(np.sum(rew)), step)
+
+                # If reward clipping is enabled, also log clipped rewards for clarity
+                if isinstance(self.reward_clip, (list, tuple)) and len(self.reward_clip) == 2:
+                    writer.add_scalar("train/step_reward_mean_clipped", float(np.mean(rew_train)), step)
+                    writer.add_scalar("train/step_reward_sum_clipped", float(np.sum(rew_train)), step)
+
                 writer.add_scalar("train/lr", lr_now, step)
             except Exception:
                 pass
@@ -347,8 +362,14 @@ class BaseTrainer(ABC):
             episode_lengths += 1
             for i, d in enumerate(done):
                 if d:
+                    # Log episode metrics against episode count (original behavior)
                     writer.add_scalar("episode/reward", episode_rewards[i], completed_episodes)
                     writer.add_scalar("episode/length", int(episode_lengths[i]), completed_episodes)
+
+                    # Additionally, log the same episode metrics against training step to align with other curves
+                    writer.add_scalar("episode_by_step/reward", episode_rewards[i], step)
+                    writer.add_scalar("episode_by_step/length", int(episode_lengths[i]), step)
+
                     completed_episodes += 1
                     episode_rewards[i] = 0.0
                     episode_lengths[i] = 0
@@ -441,6 +462,10 @@ class BaseTrainer(ABC):
                 train_time_accum = 0.0
                 last_log_step = step
                 last_log_time = time.time()
+                try:
+                    writer.flush()
+                except Exception:
+                    pass
 
             # Checkpoint
             if step % self.save_interval == 0:

@@ -1,0 +1,54 @@
+# SAC configuration for MuJoCo continuous control tasks
+
+# Environment
+env:
+  name: HalfCheetah-v4
+
+# Network architecture (MLP for continuous actions)
+network:
+  hidden_dim: 256
+  hidden_layers: 2
+
+# SAC-specific settings
+sac:
+  tau: 0.005
+  target_update_freq: 1
+  target_entropy: -inf  # Auto-set to -dim(action_space)
+  autotune: true
+  alpha: 0.2
+
+# Training settings
+training:
+  total_steps: 1000000
+  gamma: 0.99
+  lr: 0.0003
+  lr_final: 0.0003
+  lr_decay_steps: 1000000
+  batch_size: 256
+  buffer_size: 1000000
+  warmup_steps: 10000
+  target_update_freq: 1
+  target_update_mode: "soft"
+  tau: 0.005
+  grad_clip: 10.0
+  updates_per_step: 1
+  use_amp: false
+  reward_clip: null
+
+# Logging
+logging:
+  log_interval: 10000
+  save_interval: 250000
+  log_dir: "logs"
+  save_dir: "checkpoints"
+
+# Resume training
+resume:
+  checkpoint: null
+
+# Parallel environments
+parallel:
+  num_envs: 1
+  async: false
+  seed: 42
+  enable_cpu_monitor: true
