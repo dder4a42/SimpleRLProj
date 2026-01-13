@@ -3,7 +3,6 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 # =========================
@@ -271,9 +270,9 @@ class IQNQNet(nn.Module):
 
     @torch.no_grad()
     def expected_q(self, x: torch.Tensor, num_quantiles: int = 32) -> torch.Tensor:
-        # Sample taus ~ U(0,1), compute mean across quantiles → [B, A]
-        B = x.shape[0]
+        # Sample taus ~ U(0,1), compute mean across quantiles → [b, A]
+        b = x.shape[0]
         device = x.device
-        taus = torch.rand(B, int(num_quantiles), device=device)
-        q_vals = self.forward(x, taus)  # [B, N, A]
+        taus = torch.rand(b, int(num_quantiles), device=device)
+        q_vals = self.forward(x, taus)  # [b, N, A]
         return q_vals.mean(dim=1)

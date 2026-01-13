@@ -6,14 +6,12 @@ from typing import Any, Dict, Tuple, Type
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from torch.amp import autocast
 
 from rl_lib.base import BaseTrainer
 from rl_lib.buffers import ReplayBuffer, RolloutBuffer
-from rl_lib.networks import (
-    ActorNet, CriticNet, IQNQNet, PPOActorNet, QNet, ValueNet
-)
+from rl_lib.networks import ActorNet, CriticNet, IQNQNet, PPOActorNet, QNet, ValueNet
 
 # Algorithm registry
 ALGORITHMS: Dict[str, Type[BaseTrainer]] = {}
@@ -279,35 +277,35 @@ class IQNTrainer(DQNTrainer):
 
         self.opt.zero_grad(set_to_none=True)
 
-        B = obs.shape[0]
+        b = obs.shape[0]
 
         device_type = self.device if self.device in ("cuda", "cpu") else "cuda"
         with autocast(device_type=device_type, enabled=self.use_amp):
             # Sample taus for prediction and target
-            taus_pred = torch.rand(B, self.num_quantiles, device=obs.device)
-            taus_tgt = torch.rand(B, self.num_quantiles, device=obs.device)
+            taus_pred = torch.rand(b, self.num_quantiles, device=obs.device)
+            taus_tgt = torch.rand(b, self.num_quantiles, device=obs.device)
 
             # Predicted quantiles for chosen actions
-            q_pred_all = self.q(obs, taus_pred)  # [B, N, A]
-            q_pred_sa = q_pred_all.gather(2, act[:, None, None].expand(B, self.num_quantiles, 1)).squeeze(2)  # [B, N]
+            q_pred_all = self.q(obs, taus_pred)  # [b, N, A]
+            q_pred_sa = q_pred_all.gather(2, act[:, None, None].expand(b, self.num_quantiles, 1)).squeeze(2)  # [b, N]
 
             # Next-state greedy actions via expected Q (Double IQN)
-            q_next_exp = self.q.expected_q(nxt, num_quantiles=self.num_quantiles)  # [B, A]
-            a_star = torch.argmax(q_next_exp, dim=1)  # [B]
+            q_next_exp = self.q.expected_q(nxt, num_quantiles=self.num_quantiles)  # [b, A]
+            a_star = torch.argmax(q_next_exp, dim=1)  # [b]
 
             # Target quantiles from target network
-            q_tgt_all = self.q_tgt(nxt, taus_tgt)  # [B, N, A]
-            q_tgt_star = q_tgt_all.gather(2, a_star[:, None, None].expand(B, self.num_quantiles, 1)).squeeze(2)  # [B, N]
-            target = rew[:, None] + self.gamma * (1.0 - done)[:, None] * q_tgt_star  # [B, N]
+            q_tgt_all = self.q_tgt(nxt, taus_tgt)  # [b, N, A]
+            q_tgt_star = q_tgt_all.gather(2, a_star[:, None, None].expand(b, self.num_quantiles, 1)).squeeze(2)  # [b, N]
+            target = rew[:, None] + self.gamma * (1.0 - done)[:, None] * q_tgt_star  # [b, N]
 
             # Quantile regression Huber loss
-            u = target[:, None, :] - q_pred_sa[:, :, None]  # [B, N, N]
+            u = target[:, None, :] - q_pred_sa[:, :, None]  # [b, N, N]
             abs_u = torch.abs(u)
             huber = torch.where(abs_u <= self.kappa, 0.5 * u * u, self.kappa * (abs_u - 0.5 * self.kappa))
 
             # Weighting by tau - I[u<0]
-            tau = taus_pred[:, :, None]  # [B, N, 1]
-            weight = torch.abs(tau - (u.detach() < 0.0).float())  # [B, N, N]
+            tau = taus_pred[:, :, None]  # [b, N, 1]
+            weight = torch.abs(tau - (u.detach() < 0.0).float())  # [b, N, N]
             loss = (weight * huber).mean()
 
             metrics = {
@@ -389,8 +387,9 @@ class PPOTrainer(BaseTrainer):
 
     def setup_envs(self):
         """Override to use fewer envs for PPO."""
-        from rl_lib.envs import is_mujoco_env
         from gymnasium.vector import SyncVectorEnv
+
+        from rl_lib.envs import is_mujoco_env
 
         if is_mujoco_env(self.env_name):
             # Use sync vector env for MuJoCo (faster for small num_envs)
@@ -518,7 +517,6 @@ class PPOTrainer(BaseTrainer):
                 mb_obs = obs[mb_indices]
                 mb_actions = actions[mb_indices]
                 mb_old_log_probs = old_log_probs.flatten()[mb_indices]
-                mb_old_values = old_values.flatten()[mb_indices]
                 mb_advantages = advantages[mb_indices]
                 mb_returns = returns[mb_indices]
 
@@ -603,15 +601,14 @@ class PPOTrainer(BaseTrainer):
 
         # Setup logging
         from torch.utils.tensorboard.writer import SummaryWriter
+
         from rl_lib.config import save_config
 
         writer = SummaryWriter(self.log_dir)
         save_config(self.config, self.save_dir / "config.yaml")
 
         step = 0
-        completed_episodes = 0
         episode_rewards = np.zeros(self.num_envs)
-        episode_lengths = np.zeros(self.num_envs, dtype=np.int32)
         start_time = time.time()
         last_log_step = 0
         last_log_time = start_time
@@ -694,6 +691,7 @@ class SACTrainer(BaseTrainer):
     def setup_networks(self, obs_shape, n_actions):
         """Setup SAC networks (actor and double critic)."""
         net_cfg = self.config.get("network", {})
+        sac_cfg = self.config.get("sac", {})
         hidden_dim = int(net_cfg.get("hidden_dim", 256))
         hidden_layers = int(net_cfg.get("hidden_layers", 2))
 
@@ -722,8 +720,9 @@ class SACTrainer(BaseTrainer):
 
     def setup_envs(self):
         """Override to use fewer envs for SAC."""
-        from rl_lib.envs import is_mujoco_env
         from gymnasium.vector import SyncVectorEnv
+
+        from rl_lib.envs import is_mujoco_env
 
         if is_mujoco_env(self.env_name):
             # Use sync vector env for MuJoCo
@@ -835,7 +834,9 @@ class SACTrainer(BaseTrainer):
     def run(self):
         """Custom run loop for SAC."""
         import time
+
         from torch.utils.tensorboard.writer import SummaryWriter
+
         from rl_lib.config import save_config
 
         # Setup
@@ -857,7 +858,6 @@ class SACTrainer(BaseTrainer):
         )
 
         # Setup replay buffer (float for MuJoCo)
-        obs_dtype = np.float32 if self.is_mujoco else np.uint8
         rb = ReplayBuffer(obs.shape[1:], self.buffer_size)
         # Override obs storage for float32
         if self.is_mujoco:

@@ -137,8 +137,8 @@ def main():
         config.setdefault("env", {})["name"] = "ALE/Boxing-v5"
 
     # Get algorithm class and create trainer
-    TrainerClass = get_algorithm(args.algorithm)
-    trainer = TrainerClass(config, experiment_name=args.exp_name)
+    trainer_class = get_algorithm(args.algorithm)
+    trainer = trainer_class(config, experiment_name=args.exp_name)
 
     # Run training
     print(f"Starting {args.algorithm.upper()} training on {config['env']['name']}")
