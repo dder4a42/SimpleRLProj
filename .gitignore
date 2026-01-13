@@ -5,6 +5,6 @@ uv.lock
 source/
 
 tmp*
-
+.sii
 *.egg-info/
 __pycache__/

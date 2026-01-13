@@ -1,14 +1,14 @@
 [project]
 name = "rl-atari-baseline"
-version = "0.1.0"
-description = "Value-based reinforcement learning baseline for ALE Atari environments"
+version = "0.2.0"
+description = "RL framework for Atari and MuJoCo with DQN, IQN, and extensible to PPO/SAC"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [
     { name = "Your Name", email = "your.email@example.com" }
 ]
-keywords = ["reinforcement-learning", "atari", "deep-rl", "dqn"]
+keywords = ["reinforcement-learning", "atari", "mujoco", "deep-rl", "dqn", "iqn", "ppo", "sac"]
 
 dependencies = [
     # Core
@@ -34,9 +34,10 @@ dependencies = [
 gpu = [
     "nvidia-ml-py3>=7.350.0",
 ]
-# Compare tool dependencies
-compare = [
-    "tensorboard>=2.16.0",
+# MuJoCo environments (for future PPO/SAC)
+mujoco = [
+    "mujoco>=3.0",
+    "gymnasium[mujoco]>=0.29.0",
 ]
 dev = [
     "pytest>=7.0",
@@ -46,18 +47,21 @@ dev = [
 ]
 
 [project.scripts]
-train = "run:main"
-compare = "compare:main"
+train = "train:main"
+eval = "evaluate:main"
+compare-logs = "compare_logs:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-py-modules = ["run", "value_based", "value_based_v2"]
+# No standalone modules - everything is in rl_lib package
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["rl_lib*"]
+exclude = ["scripts*", "configs*"]
 
 [tool.black]
 line-length = 100

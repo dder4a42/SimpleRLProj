@@ -1,0 +1,49 @@
+# Base configuration for Atari RL training
+
+# Environment
+env:
+  frameskip: 4
+  repeat_action_probability: 0.25  # sticky actions
+  frame_stack: 4
+
+# Network architecture
+network:
+  conv_channels: [32, 64, 64]
+  fc_hidden: 512
+
+# Training settings
+training:
+  total_steps: 10000000
+  gamma: 0.99
+  lr: 0.00005
+  lr_final: 0.00001
+  lr_decay_steps: 10000000
+  batch_size: 1024
+  buffer_size: 600000
+  warmup_steps: 50000
+  target_update_freq: 10000
+  target_update_mode: "soft"
+  tau: 0.003
+  grad_clip: 10.0
+  updates_per_step: 1
+  use_amp: true
+  reward_clip: [-1.0, 1.0]
+  target_clip: null
+
+# Logging
+logging:
+  log_interval: 10000
+  save_interval: 500000
+  log_dir: "logs"
+  save_dir: "checkpoints"
+
+# Resume training
+resume:
+  checkpoint: null
+
+# Parallel environments
+parallel:
+  num_envs: 16
+  async: true
+  seed: 42
+  enable_cpu_monitor: true

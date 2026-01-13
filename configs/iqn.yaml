@@ -1,0 +1,16 @@
+# IQN (Implicit Quantile Networks) configuration
+
+extends: dqn
+
+env:
+  name: "ALE/Boxing-v5"
+
+training:
+  method: "iqn"
+
+# IQN-specific settings
+iqn:
+  num_quantiles: 32             # number of quantiles for prediction and target
+  embed_dim: 64                 # cosine embedding size for taus
+  kappa: 1.0                    # Huber threshold for quantile regression
+  eval_quantiles: 32            # quantiles for expected Q during action selection
