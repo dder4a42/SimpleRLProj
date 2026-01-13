@@ -1,6 +1,7 @@
 """Type definitions for RL framework."""
 
 from typing import TypeAlias
+
 import numpy as np
 import torch
 

@@ -14,8 +14,8 @@ Available algorithms:
 import argparse
 import sys
 
+from rl_lib.algorithms import ALGORITHMS, get_algorithm
 from rl_lib.config import load_config
-from rl_lib.algorithms import get_algorithm, ALGORITHMS
 
 
 def parse_args():

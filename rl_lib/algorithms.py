@@ -1,14 +1,14 @@
 """Algorithm implementations for RL training."""
 
-from typing import Dict, Any, Tuple, Type
+from typing import Any, Dict, Tuple, Type
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import autocast
+from torch.amp import autocast
 
 from rl_lib.base import BaseTrainer
-from rl_lib.networks import QNet, IQNQNet
-
+from rl_lib.networks import IQNQNet, QNet
 
 # Algorithm registry
 ALGORITHMS: Dict[str, Type[BaseTrainer]] = {}
@@ -114,7 +114,8 @@ class DQNTrainer(BaseTrainer):
 
         self.opt.zero_grad(set_to_none=True)
 
-        with autocast(enabled=self.use_amp):
+        device_type = self.device if self.device in ("cuda", "cpu") else "cuda"
+        with autocast(device_type=device_type, enabled=self.use_amp):
             q_sa = self.q(obs).gather(1, act[:, None]).squeeze(1)
 
             with torch.no_grad():
@@ -152,11 +153,16 @@ class DQNTrainer(BaseTrainer):
                     "alpha": alpha,
                 }
 
-        self.scaler.scale(loss).backward()
-        self.scaler.unscale_(self.opt)
-        grad_norm = nn.utils.clip_grad_norm_(self.q.parameters(), self.grad_clip)
-        self.scaler.step(self.opt)
-        self.scaler.update()
+        if self.scaler is not None:
+            self.scaler.scale(loss).backward()
+            self.scaler.unscale_(self.opt)
+            grad_norm = nn.utils.clip_grad_norm_(self.q.parameters(), self.grad_clip)
+            self.scaler.step(self.opt)
+            self.scaler.update()
+        else:
+            loss.backward()
+            grad_norm = nn.utils.clip_grad_norm_(self.q.parameters(), self.grad_clip)
+            self.opt.step()
 
         grad_norm = grad_norm.item() if torch.is_tensor(grad_norm) else float(grad_norm)
         return loss.item(), grad_norm, metrics
@@ -270,7 +276,8 @@ class IQNTrainer(DQNTrainer):
 
         B = obs.shape[0]
 
-        with autocast(enabled=self.use_amp):
+        device_type = self.device if self.device in ("cuda", "cpu") else "cuda"
+        with autocast(device_type=device_type, enabled=self.use_amp):
             # Sample taus for prediction and target
             taus_pred = torch.rand(B, self.num_quantiles, device=obs.device)
             taus_tgt = torch.rand(B, self.num_quantiles, device=obs.device)
@@ -302,11 +309,16 @@ class IQNTrainer(DQNTrainer):
                 "iqn_loss": loss.detach().item(),
             }
 
-        self.scaler.scale(loss).backward()
-        self.scaler.unscale_(self.opt)
-        grad_norm = nn.utils.clip_grad_norm_(self.q.parameters(), self.grad_clip)
-        self.scaler.step(self.opt)
-        self.scaler.update()
+        if self.scaler is not None:
+            self.scaler.scale(loss).backward()
+            self.scaler.unscale_(self.opt)
+            grad_norm = nn.utils.clip_grad_norm_(self.q.parameters(), self.grad_clip)
+            self.scaler.step(self.opt)
+            self.scaler.update()
+        else:
+            loss.backward()
+            grad_norm = nn.utils.clip_grad_norm_(self.q.parameters(), self.grad_clip)
+            self.opt.step()
 
         grad_norm = grad_norm.item() if torch.is_tensor(grad_norm) else float(grad_norm)
         return loss.item(), grad_norm, metrics

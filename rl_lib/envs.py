@@ -1,9 +1,10 @@
 """Environment wrappers and factories."""
 
+from collections import deque
+
 import cv2
 import gymnasium as gym
 import numpy as np
-from collections import deque
 
 # Register ALE environments with gymnasium
 try:

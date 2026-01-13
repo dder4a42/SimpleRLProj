@@ -4,21 +4,19 @@ import os
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.cuda.amp import autocast, GradScaler
-from torch.utils.tensorboard.writer import SummaryWriter
-from gymnasium.vector import AsyncVectorEnv
 import psutil
+import torch
+from gymnasium.vector import AsyncVectorEnv
+from torch.amp import GradScaler
+from torch.utils.tensorboard.writer import SummaryWriter
 
 from rl_lib.buffers import ReplayBuffer
+from rl_lib.config import save_config
 from rl_lib.envs import make_env
 from rl_lib.utils import get_device
-from rl_lib.config import save_config
 
 
 class BaseTrainer(ABC):
@@ -265,7 +263,10 @@ class BaseTrainer(ABC):
 
         # Setup optimizer and scaler
         self.opt = torch.optim.Adam(self.q.parameters(), lr=self.lr_start)
-        self.scaler = GradScaler(enabled=self.use_amp)
+        if self.device == "cuda":
+            self.scaler = GradScaler("cuda", enabled=self.use_amp)
+        else:
+            self.scaler = None  # No scaler needed for CPU
 
         # Load checkpoint if resuming
         step = self._load_checkpoint()

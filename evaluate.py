@@ -12,15 +12,15 @@ Usage:
 import argparse
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
+import gymnasium as gym
 import numpy as np
 import torch
-import gymnasium as gym
 from tqdm import tqdm
 
-from rl_lib.networks import QNet, IQNQNet
-from rl_lib.envs import AtariPreprocess, make_env
+from rl_lib.envs import AtariPreprocess
+from rl_lib.networks import IQNQNet, QNet
 from rl_lib.utils import get_device
 
 

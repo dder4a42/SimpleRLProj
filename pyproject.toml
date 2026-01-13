@@ -3,7 +3,7 @@ name = "rl-project"
 version = "0.2.0"
 description = "RL framework for Atari and MuJoCo with DQN, IQN, and extensible to PPO/SAC"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
     { name = "Your Name", email = "your.email@example.com" }
@@ -32,12 +32,12 @@ dependencies = [
 [project.optional-dependencies]
 # GPU monitoring utilities (optional - code works without this)
 gpu = [
-    "nvidia-ml-py3>=7.350.0",
+    "nvidia-ml-py3",
 ]
 # MuJoCo environments (for future PPO/SAC)
 mujoco = [
-    "mujoco>=3.0",
-    "gymnasium[mujoco]>=0.29.0",
+    "mujoco",
+    "gymnasium[mujoco]",
 ]
 dev = [
     "pytest",
