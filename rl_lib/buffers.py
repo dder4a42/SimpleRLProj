@@ -65,11 +65,16 @@ class RolloutBuffer:
 class ReplayBuffer:
     """Memory-efficient NumPy ring replay buffer."""
 
-    def __init__(self, obs_shape, size):
+    def __init__(self, obs_shape, size, action_shape=None, action_dtype=np.float32):
         self.size = int(size)
         self.obs = np.empty((self.size, *obs_shape), np.uint8)
         self.next = np.empty_like(self.obs)
-        self.act = np.empty(self.size, np.int32)
+        # support scalar (discrete) or vector (continuous) actions
+        if action_shape is None:
+            # default: scalar discrete actions
+            self.act = np.empty(self.size, np.int32)
+        else:
+            self.act = np.empty((self.size, *action_shape), action_dtype)
         self.rew = np.empty(self.size, np.float32)
         self.done = np.empty(self.size, np.bool_)
         self.ptr = 0

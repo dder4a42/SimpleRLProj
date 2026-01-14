@@ -808,13 +808,8 @@ class SACTrainer(BaseTrainer):
 
         actor_loss = (alpha * log_probs - q_new).mean()
 
-        # Alpha loss (autotune)
-        alpha_loss = torch.tensor(0.0)
-        if self.autotune:
-            alpha_loss = -(self.log_alpha * (log_probs + self.target_entropy).detach()).mean()
-
-        # Total loss
-        loss = critic_loss + actor_loss + alpha_loss
+        # Total loss (critic + actor only, alpha is handled separately)
+        loss = critic_loss + actor_loss
 
         # Optimize critic and actor
         loss.backward()
@@ -824,9 +819,11 @@ class SACTrainer(BaseTrainer):
         )
         self.opt.step()
 
-        # Update alpha (autotune)
+        # Update alpha (autotune) - separate backward pass to avoid retain_graph issues
+        alpha_loss = torch.tensor(0.0)
         if self.autotune:
             self.alpha_opt.zero_grad()
+            alpha_loss = -(self.log_alpha * (log_probs + self.target_entropy).detach()).mean()
             alpha_loss.backward()
             self.alpha_opt.step()
 
@@ -889,8 +886,8 @@ class SACTrainer(BaseTrainer):
             lr=self.lr_start
         )
 
-        # Setup replay buffer (float for MuJoCo)
-        rb = ReplayBuffer(obs.shape[1:], self.buffer_size)
+        # Setup replay buffer (float for MuJoCo). Pass action shape for continuous actions
+        rb = ReplayBuffer(obs.shape[1:], self.buffer_size, action_shape=(action_dim,), action_dtype=np.float32)
         # Override obs storage for float32
         if self.is_mujoco:
             rb.obs = np.empty((rb.size, *obs.shape[1:]), np.float32)
