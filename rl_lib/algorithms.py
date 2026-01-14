@@ -478,8 +478,8 @@ class PPOTrainer(BaseTrainer):
             obs_tensor = torch.from_numpy(obs).to(self.device).float()
             next_value = self.value(obs_tensor).squeeze(-1).cpu().numpy()
 
-        # Return cumulative per-env rewards so callers can aggregate without shape issues
-        return obs, next_value, cumulative_rewards
+        # Return cumulative per-env rewards and list of completed episode returns
+        return obs, next_value, cumulative_rewards, episode_returns
 
     def _update_policy(self, rollout_buffer, next_value):
         """Update policy using PPO loss."""
@@ -633,7 +633,7 @@ class PPOTrainer(BaseTrainer):
             lr_now = self._update_learning_rate(step)
 
             # Collect rollouts
-            obs, next_value, rollout_returns = self._collect_rollouts(envs, obs, rollout_buffer, step)
+            obs, next_value, rollout_returns, completed_episode_returns = self._collect_rollouts(envs, obs, rollout_buffer, step)
 
             # Update policy
             metrics = self._update_policy(rollout_buffer, next_value)
@@ -645,8 +645,23 @@ class PPOTrainer(BaseTrainer):
             steps_collected = self.rollout_steps * self.num_envs
             step += steps_collected
 
-            # Track episode stats
-            episode_rewards += rollout_returns  # Simplified
+            # Track episode stats: accumulate per-env rollout rewards (simplified)
+            episode_rewards += rollout_returns
+
+            # Log rollout-level reward stats
+            try:
+                writer.add_scalar("train/rollout_reward_mean", float(np.mean(rollout_returns)), step)
+                writer.add_scalar("train/rollout_reward_max", float(np.max(rollout_returns)), step)
+                writer.add_scalar("train/rollout_reward_min", float(np.min(rollout_returns)), step)
+            except Exception:
+                pass
+
+            # Log any completed episode returns from this rollout
+            for r in completed_episode_returns:
+                try:
+                    writer.add_scalar("episode/reward", float(r), step)
+                except Exception:
+                    pass
 
             # Logging
             if step - last_log_step >= self.log_interval:
