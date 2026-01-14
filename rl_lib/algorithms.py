@@ -404,7 +404,8 @@ class PPOTrainer(BaseTrainer):
         """Helper to create a single environment."""
         from rl_lib.envs import make_env
         max_episode_steps = self.env_cfg.get("max_episode_steps")
-        return make_env(self.env_name, self.seed_base + rank, 0, 0, 0, max_episode_steps)()
+        # Return a thunk (callable) that creates the environment when called by SyncVectorEnv
+        return make_env(self.env_name, self.seed_base + rank, 0, 0, 0, max_episode_steps)
 
     def _compute_gae(self, rewards, values, dones, next_value):
         """Compute Generalized Advantage Estimation (GAE).
@@ -443,6 +444,8 @@ class PPOTrainer(BaseTrainer):
             next_obs, episode_returns
         """
         episode_returns = []
+        # cumulative rewards per environment for this rollout
+        cumulative_rewards = np.zeros(self.num_envs, dtype=np.float32)
 
         for _ in range(self.rollout_steps):
             with torch.no_grad():
@@ -467,12 +470,16 @@ class PPOTrainer(BaseTrainer):
                     # Get episode return (simplified - we should track this properly)
                     episode_returns.append(rewards[i])
 
+            # accumulate rewards per-environment for this rollout
+            cumulative_rewards += rewards
+
         # Compute next value for GAE
         with torch.no_grad():
             obs_tensor = torch.from_numpy(obs).to(self.device).float()
             next_value = self.value(obs_tensor).squeeze(-1).cpu().numpy()
 
-        return obs, next_value, episode_returns
+        # Return cumulative per-env rewards so callers can aggregate without shape issues
+        return obs, next_value, cumulative_rewards
 
     def _update_policy(self, rollout_buffer, next_value):
         """Update policy using PPO loss."""
@@ -488,18 +495,23 @@ class PPOTrainer(BaseTrainer):
         # Reshape for GAE computation
         rewards = rewards.reshape(self.rollout_steps, self.num_envs)
         dones = dones.reshape(self.rollout_steps, self.num_envs)
-        old_values = old_values.reshape(self.rollout_steps, self.num_envs)
+        # old_values is a torch tensor; convert to numpy for the numpy-based GAE implementation
+        old_values_np = old_values.cpu().numpy().reshape(self.rollout_steps, self.num_envs)
         next_value = next_value.reshape(self.num_envs)
 
-        # Compute GAE
-        advantages, returns = self._compute_gae(rewards, old_values, dones, next_value)
+        # Compute GAE (returns numpy arrays)
+        advantages, returns = self._compute_gae(rewards, old_values_np, dones, next_value)
 
         # Flatten
         advantages = advantages.flatten()
         returns = returns.flatten()
 
-        # Normalize advantages
+        # Normalize advantages (numpy)
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+
+        # Convert advantages/returns to torch tensors on the training device
+        advantages = torch.from_numpy(advantages).to(self.device).float()
+        returns = torch.from_numpy(returns).to(self.device).float()
 
         total_metrics = {}
 

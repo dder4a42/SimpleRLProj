@@ -10,7 +10,7 @@ import numpy as np
 import psutil
 import torch
 from gymnasium.vector import AsyncVectorEnv
-from torch.amp import GradScaler
+from torch.cuda.amp import GradScaler
 from torch.utils.tensorboard.writer import SummaryWriter
 
 from rl_lib.buffers import ReplayBuffer
@@ -271,10 +271,8 @@ class BaseTrainer(ABC):
 
         # Setup optimizer and scaler
         self.opt = torch.optim.Adam(self.q.parameters(), lr=self.lr_start)
-        if self.device == "cuda":
-            self.scaler = GradScaler("cuda", enabled=self.use_amp)
-        else:
-            self.scaler = None  # No scaler needed for CPU
+        # Create a GradScaler; it will be disabled automatically when AMP is not used
+        self.scaler = GradScaler(enabled=self.use_amp)
 
         # Load checkpoint if resuming
         step = self._load_checkpoint()
