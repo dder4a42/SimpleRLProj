@@ -768,7 +768,8 @@ class SACTrainer(BaseTrainer):
         """Helper to create a single environment."""
         from rl_lib.envs import make_env
         max_episode_steps = self.env_cfg.get("max_episode_steps")
-        return make_env(self.env_name, self.seed_base + rank, 0, 0, 0, max_episode_steps)()
+        # Return a thunk (callable) that will create the environment when invoked by SyncVectorEnv
+        return make_env(self.env_name, self.seed_base + rank, 0, 0, 0, max_episode_steps)
 
     def train_step(self, batch):
         """Perform one SAC training step."""
