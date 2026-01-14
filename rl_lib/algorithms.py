@@ -446,6 +446,8 @@ class PPOTrainer(BaseTrainer):
         episode_returns = []
         # cumulative rewards per environment for this rollout
         cumulative_rewards = np.zeros(self.num_envs, dtype=np.float32)
+        # running per-environment episode returns (reset on done)
+        running_episode_returns = np.zeros(self.num_envs, dtype=np.float32)
 
         for _ in range(self.rollout_steps):
             with torch.no_grad():
@@ -464,11 +466,13 @@ class PPOTrainer(BaseTrainer):
 
             obs = next_obs
 
-            # Track episode returns
-            for i, done in enumerate(dones):
-                if done:
-                    # Get episode return (simplified - we should track this properly)
-                    episode_returns.append(rewards[i])
+            # Track episode returns: accumulate per-environment and record full episode returns on done
+            running_episode_returns += rewards
+            for i, d in enumerate(dones):
+                if d:
+                    # Append the cumulative return for the completed episode and reset
+                    episode_returns.append(float(running_episode_returns[i]))
+                    running_episode_returns[i] = 0.0
 
             # accumulate rewards per-environment for this rollout
             cumulative_rewards += rewards
