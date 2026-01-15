@@ -1,0 +1,11 @@
+# Ablation: RAM observations, frame_stack=4
+# Purpose: test whether adding history helps when using RAM.
+extends: value_based.yaml
+
+env:
+  obs_type: "ram"
+  frame_stack: 4
+
+network:
+  mlp_hidden: 512
+  mlp_layers: 2

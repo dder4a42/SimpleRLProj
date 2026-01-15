@@ -47,19 +47,63 @@ class AtariPreprocess(gym.Wrapper):
         return obs
 
 
-def make_atari_env(env_name, seed, frameskip, repeat_prob, frame_stack, max_episode_steps=None):
+class AtariRamStack(gym.Wrapper):
+    """Frame stack for RAM observations (keeps raw bytes)."""
+
+    def __init__(self, env, frame_stack=4):
+        super().__init__(env)
+        self.frame_stack = frame_stack
+        self.frames = deque(maxlen=frame_stack)
+
+        ram_shape = getattr(env.observation_space, "shape", None) or ()
+        if len(ram_shape) != 1:
+            raise ValueError("Atari RAM observations are expected to be 1D vectors.")
+
+        ram_dim = int(ram_shape[0])
+        self.observation_space = gym.spaces.Box(0, 255, (frame_stack, ram_dim), np.uint8)
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        self.frames.clear()
+        for _ in range(self.frame_stack):
+            self.frames.append(obs)
+        return np.stack(self.frames), info
+
+    def step(self, action):
+        obs, r, term, trunc, info = self.env.step(action)
+        self.frames.append(obs)
+        return np.stack(self.frames), r, term, trunc, info
+
+
+def make_atari_env(env_name, seed, frameskip, repeat_prob, frame_stack, obs_type="pixel", max_episode_steps=None):
     """Factory function for creating Atari environments with preprocessing."""
     def thunk():
-        env = gym.make(
-            env_name,
-            frameskip=frameskip,
-            repeat_action_probability=repeat_prob,
-        )
+        env_kwargs = {
+            "frameskip": frameskip,
+            "repeat_action_probability": repeat_prob,
+        }
+
+        obs_mode = str(obs_type).lower()
+        if obs_mode == "ram":
+            env_kwargs["obs_type"] = "ram"
+
+        env = gym.make(env_name, **env_kwargs)
         env.reset(seed=seed)
 
         # Optionally apply a TimeLimit wrapper to ensure episodes terminate
         if max_episode_steps is not None and int(max_episode_steps) > 0:
             env = gym.wrappers.TimeLimit(env, max_episode_steps=int(max_episode_steps))
+
+        # Auto-detect RAM observation spaces to avoid preprocessing errors even
+        # if obs_type was not explicitly set.
+        is_ram_obs = obs_mode == "ram"
+        try:
+            is_ram_obs = is_ram_obs or len(getattr(env.observation_space, "shape", ())) == 1
+        except Exception:
+            pass
+
+        if is_ram_obs:
+            return AtariRamStack(env, frame_stack)
 
         return AtariPreprocess(env, frame_stack)
 
@@ -110,7 +154,7 @@ def is_mujoco_env(env_name: str) -> bool:
     return any(keyword in env_lower for keyword in mujoco_keywords)
 
 
-def make_env(env_name, seed, frameskip=4, repeat_prob=0.25, frame_stack=4, max_episode_steps=None):
+def make_env(env_name, seed, frameskip=4, repeat_prob=0.25, frame_stack=4, obs_type="pixel", max_episode_steps=None):
     """Generic factory function for creating environments.
 
     Detects environment type and applies appropriate preprocessing.
@@ -128,4 +172,4 @@ def make_env(env_name, seed, frameskip=4, repeat_prob=0.25, frame_stack=4, max_e
     if is_mujoco_env(env_name):
         return make_mujoco_env(env_name, seed, max_episode_steps=max_episode_steps)
     else:
-        return make_atari_env(env_name, seed, frameskip, repeat_prob, frame_stack, max_episode_steps=max_episode_steps)
+        return make_atari_env(env_name, seed, frameskip, repeat_prob, frame_stack, obs_type=obs_type, max_episode_steps=max_episode_steps)

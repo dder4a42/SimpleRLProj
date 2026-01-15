@@ -214,6 +214,26 @@ class QNet(nn.Module):
         return self.fc(x.flatten(1))
 
 
+class QNetRAM(nn.Module):
+    """MLP Q-network for RAM observations."""
+
+    def __init__(self, n_actions, input_dim=128, hidden_dim=512, hidden_layers=2):
+        super().__init__()
+        layers = []
+        in_dim = int(input_dim)
+        for _ in range(int(hidden_layers)):
+            layers.append(nn.Linear(in_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            in_dim = hidden_dim
+        layers.append(nn.Linear(in_dim, n_actions))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float() / 255.0
+        x = x.view(x.size(0), -1)
+        return self.net(x)
+
+
 # =========================
 # IQN Q Network (Implicit Quantile Networks)
 # =========================
@@ -275,4 +295,51 @@ class IQNQNet(nn.Module):
         device = x.device
         taus = torch.rand(b, int(num_quantiles), device=device)
         q_vals = self.forward(x, taus)  # [b, N, A]
+        return q_vals.mean(dim=1)
+
+
+class IQNQNetRAM(nn.Module):
+    """IQN variant for RAM observations with an MLP backbone."""
+
+    def __init__(self, n_actions, input_dim=128, fc_hidden=512, quantile_embed_dim=64):
+        super().__init__()
+        self.n_actions = int(n_actions)
+        self.quantile_embed_dim = int(quantile_embed_dim)
+
+        self.state_fc = nn.Sequential(
+            nn.Linear(int(input_dim), fc_hidden),
+            nn.ReLU(),
+        )
+        self.quantile_fc = nn.Sequential(
+            nn.Linear(self.quantile_embed_dim, fc_hidden),
+            nn.ReLU(),
+        )
+        self.head = nn.Linear(fc_hidden, n_actions)
+
+        self.register_buffer(
+            "embed_pi_k",
+            torch.arange(self.quantile_embed_dim, dtype=torch.float32).view(1, 1, -1) * np.pi,
+        )
+
+    def _feature(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.float() / 255.0
+        x = x.view(x.size(0), -1)
+        return self.state_fc(x)
+
+    def _quantile_embedding(self, taus: torch.Tensor) -> torch.Tensor:
+        cos_emb = torch.cos(taus.unsqueeze(-1) * self.embed_pi_k)
+        return self.quantile_fc(cos_emb)
+
+    def forward(self, x: torch.Tensor, taus: torch.Tensor) -> torch.Tensor:
+        feat = self._feature(x)
+        qemb = self._quantile_embedding(taus)
+        fused = feat.unsqueeze(1) * qemb
+        return self.head(fused)
+
+    @torch.no_grad()
+    def expected_q(self, x: torch.Tensor, num_quantiles: int = 32) -> torch.Tensor:
+        b = x.shape[0]
+        device = x.device
+        taus = torch.rand(b, int(num_quantiles), device=device)
+        q_vals = self.forward(x, taus)
         return q_vals.mean(dim=1)

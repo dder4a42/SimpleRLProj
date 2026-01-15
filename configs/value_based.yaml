@@ -6,11 +6,16 @@ env:
   frameskip: 4
   repeat_action_probability: 0.25  # sticky actions
   frame_stack: 4
+  # Set to "ram" to use 128-byte RAM observations instead of pixels
+  obs_type: "pixel"
 
 # Network
 network:
   conv_channels: [32, 64, 64]
   fc_hidden: 512
+  # Used for RAM mode (MLP backbone)
+  mlp_hidden: 512
+  mlp_layers: 2
 
 # Training (step-based)
 training:

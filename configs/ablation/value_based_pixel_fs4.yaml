@@ -1,0 +1,7 @@
+# Ablation: Pixel observations, frame_stack=4
+# Purpose: mitigate partial observability by providing short history.
+extends: value_based.yaml
+
+env:
+  obs_type: "pixel"
+  frame_stack: 4

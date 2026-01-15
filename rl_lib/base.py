@@ -51,6 +51,7 @@ class BaseTrainer(ABC):
         self.frame_stack = int(self.env_cfg.get("frame_stack", 4))
         self.frameskip = int(self.env_cfg.get("frameskip", 4))
         self.repeat_prob = float(self.env_cfg.get("repeat_action_probability", 0.25))
+        self.obs_type = str(self.env_cfg.get("obs_type", "pixel")).lower()
         self.max_episode_steps = int(self.env_cfg.get("max_episode_steps", 0))
 
         self.num_envs = int(self.parallel_cfg.get("num_envs", 8))
@@ -122,6 +123,7 @@ class BaseTrainer(ABC):
                 self.frameskip,
                 self.repeat_prob,
                 self.frame_stack,
+                self.obs_type,
                 max_episode_steps=(self.max_episode_steps if self.max_episode_steps > 0 else None),
             )
             for i in range(self.num_envs)

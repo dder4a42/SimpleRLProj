@@ -48,6 +48,14 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--obs-type",
+        type=str,
+        choices=["pixel", "ram"],
+        default=None,
+        help="Observation type for ALE environments (pixel or ram)",
+    )
+
+    parser.add_argument(
         "--exp-name", "-n",
         type=str,
         default=None,
@@ -118,6 +126,9 @@ def main():
     # Override config with command line arguments
     if args.env:
         config["env"]["name"] = args.env
+
+    if args.obs_type:
+        config.setdefault("env", {})["obs_type"] = args.obs_type
 
     if args.total_steps:
         config["training"]["total_steps"] = args.total_steps

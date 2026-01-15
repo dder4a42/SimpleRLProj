@@ -1,0 +1,7 @@
+# Ablation: Pixel observations, frame_stack=1
+# Purpose: increase partial observability (no history), keep everything else identical.
+extends: value_based.yaml
+
+env:
+  obs_type: "pixel"
+  frame_stack: 1

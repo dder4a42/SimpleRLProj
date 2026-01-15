@@ -11,7 +11,16 @@ from torch.amp import autocast
 
 from rl_lib.base import BaseTrainer
 from rl_lib.buffers import ReplayBuffer, RolloutBuffer
-from rl_lib.networks import ActorNet, CriticNet, IQNQNet, PPOActorNet, QNet, ValueNet
+from rl_lib.networks import (
+    ActorNet,
+    CriticNet,
+    IQNQNet,
+    IQNQNetRAM,
+    PPOActorNet,
+    QNet,
+    QNetRAM,
+    ValueNet,
+)
 
 # Algorithm registry
 ALGORITHMS: Dict[str, Type[BaseTrainer]] = {}
@@ -66,9 +75,17 @@ class DQNTrainer(BaseTrainer):
         net_cfg = self.config.get("network", {})
         conv_channels = tuple(net_cfg.get("conv_channels", [32, 64, 64]))
         fc_hidden = int(net_cfg.get("fc_hidden", 512))
+        mlp_hidden = int(net_cfg.get("mlp_hidden", fc_hidden))
+        mlp_layers = int(net_cfg.get("mlp_layers", 2))
 
-        self.q = QNet(n_actions, in_ch=obs_shape[0], conv_channels=conv_channels, fc_hidden=fc_hidden).to(self.device)
-        self.q_tgt = QNet(n_actions, in_ch=obs_shape[0], conv_channels=conv_channels, fc_hidden=fc_hidden).to(self.device)
+        if len(obs_shape) == 3:
+            self.q = QNet(n_actions, in_ch=obs_shape[0], conv_channels=conv_channels, fc_hidden=fc_hidden).to(self.device)
+            self.q_tgt = QNet(n_actions, in_ch=obs_shape[0], conv_channels=conv_channels, fc_hidden=fc_hidden).to(self.device)
+        else:
+            input_dim = int(np.prod(obs_shape))
+            self.q = QNetRAM(n_actions, input_dim=input_dim, hidden_dim=mlp_hidden, hidden_layers=mlp_layers).to(self.device)
+            self.q_tgt = QNetRAM(n_actions, input_dim=input_dim, hidden_dim=mlp_hidden, hidden_layers=mlp_layers).to(self.device)
+
         self.q_tgt.load_state_dict(self.q.state_dict())
         self.q_tgt.eval()
 
@@ -223,22 +240,40 @@ class IQNTrainer(DQNTrainer):
         net_cfg = self.config.get("network", {})
         conv_channels = tuple(net_cfg.get("conv_channels", [32, 64, 64]))
         fc_hidden = int(net_cfg.get("fc_hidden", 512))
+        mlp_hidden = int(net_cfg.get("mlp_hidden", fc_hidden))
+        mlp_layers = int(net_cfg.get("mlp_layers", 2))
 
-        self.q = IQNQNet(
-            n_actions,
-            in_ch=obs_shape[0],
-            conv_channels=conv_channels,
-            fc_hidden=fc_hidden,
-            quantile_embed_dim=self.quantile_embed_dim,
-        ).to(self.device)
+        if len(obs_shape) == 3:
+            self.q = IQNQNet(
+                n_actions,
+                in_ch=obs_shape[0],
+                conv_channels=conv_channels,
+                fc_hidden=fc_hidden,
+                quantile_embed_dim=self.quantile_embed_dim,
+            ).to(self.device)
 
-        self.q_tgt = IQNQNet(
-            n_actions,
-            in_ch=obs_shape[0],
-            conv_channels=conv_channels,
-            fc_hidden=fc_hidden,
-            quantile_embed_dim=self.quantile_embed_dim,
-        ).to(self.device)
+            self.q_tgt = IQNQNet(
+                n_actions,
+                in_ch=obs_shape[0],
+                conv_channels=conv_channels,
+                fc_hidden=fc_hidden,
+                quantile_embed_dim=self.quantile_embed_dim,
+            ).to(self.device)
+        else:
+            input_dim = int(np.prod(obs_shape))
+            self.q = IQNQNetRAM(
+                n_actions,
+                input_dim=input_dim,
+                fc_hidden=mlp_hidden,
+                quantile_embed_dim=self.quantile_embed_dim,
+            ).to(self.device)
+
+            self.q_tgt = IQNQNetRAM(
+                n_actions,
+                input_dim=input_dim,
+                fc_hidden=mlp_hidden,
+                quantile_embed_dim=self.quantile_embed_dim,
+            ).to(self.device)
 
         self.q_tgt.load_state_dict(self.q.state_dict())
         self.q_tgt.eval()

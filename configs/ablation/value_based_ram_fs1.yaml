@@ -1,0 +1,12 @@
+# Ablation: RAM observations, frame_stack=1
+# Purpose: compare against pixels under minimal history.
+extends: value_based.yaml
+
+env:
+  obs_type: "ram"
+  frame_stack: 1
+
+network:
+  # RAM mode uses an MLP backbone; keep capacity explicit here.
+  mlp_hidden: 512
+  mlp_layers: 2
