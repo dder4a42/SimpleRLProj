@@ -15,11 +15,11 @@ set -euo pipefail
 
 ENVS=("$@")
 if [ ${#ENVS[@]} -eq 0 ]; then
-  ENVS=("ALE/Pong-v5" "ALE/Breakout-v5" "ALE/VideoPinball-v5")
+  ENVS=("ALE/Pong-v5")
 fi
 
 # You can edit these seeds or export SEEDS="0 1 2" before running.
-SEEDS_STR=${SEEDS:-"42 43 44"}
+SEEDS_STR=${SEEDS:-"42"}
 read -r -a SEEDS <<< "${SEEDS_STR}"
 
 CONFIGS=(
@@ -29,7 +29,7 @@ CONFIGS=(
   "configs/ablation/value_based_ram_fs4.yaml"
 )
 
-ALGS=("dqn" "iqn")
+ALGS=("iqn")
 
 for env in "${ENVS[@]}"; do
   for alg in "${ALGS[@]}"; do

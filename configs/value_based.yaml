@@ -36,9 +36,9 @@ training:
   target_update_mode: "soft"    # "hard" or "soft" (Polyak)
   tau: 0.003                    # Polyak factor if soft update is enabled
   grad_clip: 10.0
-  updates_per_step: 1           # gradient updates per env step (aggregate)
+  updates_per_step: 2           # gradient updates per env step (aggregate)
   use_amp: true                 # enable CUDA AMP (mixed precision)
-  reward_clip: [-1.0, 1.0]      # optional training-time reward clipping; set to null to disable
+  reward_clip: null      # optional training-time reward clipping; set to null to disable
   target_clip: null             # optional target clamp magnitude; set to null to disable
 
 # IQN-specific settings (used when training.method == "iqn")
