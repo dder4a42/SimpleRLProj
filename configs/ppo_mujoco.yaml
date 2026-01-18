@@ -22,7 +22,7 @@ ppo:
 
 # Training settings
 training:
-  total_steps: 1000000
+  total_steps: 2000000
   gamma: 0.99
   lr: 0.0003
   lr_final: 0.0003

@@ -1,0 +1,17 @@
+# DQN configuration with soft Double Q-learning
+
+extends: base
+
+env:
+  name: "ALE/Boxing-v5"
+
+training:
+  method: "dqn"
+  alpha: 0.05                   # entropy temperature for Boltzmann policy
+  alpha_start: 0.05
+  alpha_final: 0.01
+  alpha_decay_steps: 4000000
+  updates_per_step: 2
+  reward_clip: null
+  lr: 2.5e-5
+  lr_final: 1.0e-5

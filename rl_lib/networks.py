@@ -5,6 +5,13 @@ import torch
 import torch.nn as nn
 
 
+def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
+    """Orthogonal initialization."""
+    torch.nn.init.orthogonal_(layer.weight, std)
+    torch.nn.init.constant_(layer.bias, bias_const)
+    return layer
+
+
 # =========================
 # MLP Networks for MuJoCo
 # =========================
@@ -16,10 +23,11 @@ class MLP(nn.Module):
         layers = []
         in_dim = input_dim
         for _ in range(hidden_layers):
-            layers.append(nn.Linear(in_dim, hidden_dim))
-            layers.append(nn.ReLU())
+            layers.append(layer_init(nn.Linear(in_dim, hidden_dim)))
+            layers.append(nn.Tanh())
             in_dim = hidden_dim
-        layers.append(nn.Linear(in_dim, output_dim))
+        # Output layer
+        layers.append(layer_init(nn.Linear(in_dim, output_dim), std=1.0))
         self.net = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -84,6 +92,51 @@ class ActorNet(nn.Module):
         return torch.clamp(log_std, self.log_std_min, self.log_std_max)
 
 
+
+class StateNormalizer(nn.Module):
+    """Running mean/var state normalizer for observations with device-safe buffers."""
+    def __init__(self, obs_dim: int, clip_range: float = 10.0):
+        super().__init__()
+        self.obs_dim = obs_dim
+        self.clip_range = clip_range
+        # Register buffers to follow module device/dtype moves
+        self.register_buffer('running_mean', torch.zeros(obs_dim, dtype=torch.float32))
+        self.register_buffer('running_var', torch.ones(obs_dim, dtype=torch.float32))
+        self.count = 0
+
+    def update(self, obs_batch: torch.Tensor):
+        if obs_batch.dim() == 1:
+            obs_batch = obs_batch.unsqueeze(0)
+        # Ensure batch is on the same device as the buffers
+        obs_batch = obs_batch.to(self.running_mean.device, dtype=torch.float32)
+        batch_count = obs_batch.shape[0]
+        batch_mean = obs_batch.mean(dim=0)
+        batch_var = obs_batch.var(dim=0, unbiased=False)
+        if self.count == 0:
+            self.running_mean.copy_(batch_mean)
+            # avoid zero var
+            self.running_var.copy_(torch.clamp(batch_var, min=1e-6))
+            self.count = batch_count
+            return
+        # Update running statistics (per-dimension Welford aggregation)
+        new_count = self.count + batch_count
+        delta = batch_mean - self.running_mean
+        m_a = self.running_var * self.count
+        m_b = batch_var * batch_count
+        M2 = m_a + m_b + (delta ** 2) * self.count * batch_count / new_count
+        self.running_mean.add_(delta * batch_count / new_count)
+        self.running_var.copy_(torch.clamp(M2 / new_count, min=1e-6))
+        self.count = new_count
+
+    def normalize(self, obs: torch.Tensor) -> torch.Tensor:
+        if self.count == 0:
+            return obs
+        mean = self.running_mean.to(obs.device, dtype=obs.dtype)
+        var = self.running_var.to(obs.device, dtype=obs.dtype)
+        obs_norm = (obs - mean) / (torch.sqrt(var) + 1e-8)
+        return torch.clamp(obs_norm, -self.clip_range, self.clip_range)
+
+
 # =========================
 # PPO Actor Network
 # =========================
@@ -99,11 +152,16 @@ class PPOActorNet(nn.Module):
         self.obs_dim = obs_dim
         self.action_dim = action_dim
 
+        # State normalizer (built-in)
+        self.state_normalizer = StateNormalizer(obs_dim)
+
         self.backbone = MLP(obs_dim, hidden_dim, hidden_dim, hidden_layers)
-        self.mean = nn.Linear(hidden_dim, action_dim)
+        self.mean = layer_init(nn.Linear(hidden_dim, action_dim), std=0.01)
 
         # Learnable log_std (shared across all actions)
-        self.log_std = nn.Parameter(torch.ones(action_dim) * init_log_std)
+        # Initialize to a smaller value (e.g. 10% of action range [-1, 1])
+        # range = 2.0. 10% = 0.2. log(0.2) ~= -1.6
+        self.log_std = nn.Parameter(torch.ones(action_dim) * -1.6)
 
     def forward(self, obs, action=None):
         """Forward pass.
@@ -115,6 +173,9 @@ class PPOActorNet(nn.Module):
         Returns:
             dict with mean, log_std, actions (if action provided, includes log_prob, entropy)
         """
+        # Normalize observations
+        obs = self.state_normalizer.normalize(obs)
+
         x = self.backbone(obs)
         mean = torch.tanh(self.mean(x))
         std = torch.exp(self.log_std.clamp(-20, 2))

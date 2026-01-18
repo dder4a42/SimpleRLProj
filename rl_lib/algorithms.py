@@ -487,17 +487,30 @@ class PPOTrainer(BaseTrainer):
         for _ in range(self.rollout_steps):
             with torch.no_grad():
                 obs_tensor = torch.from_numpy(obs).to(self.device).float()
+                
+                # Update state normalizer with current batch of observations
+                # We need to reshape to [num_envs, obs_dim] which it already is
+                if hasattr(self.actor, "state_normalizer"):
+                    self.actor.state_normalizer.update(obs_tensor)
+                    # Normalize for Value network
+                    obs_tensor_norm = self.actor.state_normalizer.normalize(obs_tensor)
+                else:
+                    obs_tensor_norm = obs_tensor
+
+                # Actor handles normalization internally now
                 policy_out = self.actor(obs_tensor)
                 actions = policy_out["action"].cpu().numpy()
                 log_probs = policy_out["log_prob"].squeeze(-1).cpu().numpy()
-                values = self.value(obs_tensor).squeeze(-1).cpu().numpy()
+                
+                # Pass normalized observations to Value network
+                values = self.value(obs_tensor_norm).squeeze(-1).cpu().numpy()
 
             # Step environment
             next_obs, rewards, terms, truncs, _ = envs.step(actions)
             dones = np.logical_or(terms, truncs).astype(np.float32)
 
-            # Store in buffer
-            rollout_buffer.add(obs, actions, rewards, values, log_probs, dones)
+            # Store in buffer (Reward Scaling: * 0.1)
+            rollout_buffer.add(obs, actions, rewards * 0.1, values, log_probs, dones)
 
             obs = next_obs
 
@@ -515,6 +528,9 @@ class PPOTrainer(BaseTrainer):
         # Compute next value for GAE
         with torch.no_grad():
             obs_tensor = torch.from_numpy(obs).to(self.device).float()
+            # Normalize for next value
+            if hasattr(self.actor, "state_normalizer"):
+                 obs_tensor = self.actor.state_normalizer.normalize(obs_tensor)
             next_value = self.value(obs_tensor).squeeze(-1).cpu().numpy()
 
         # Return cumulative per-env rewards and list of completed episode returns
@@ -570,24 +586,46 @@ class PPOTrainer(BaseTrainer):
                 mb_old_log_probs = old_log_probs.flatten()[mb_indices]
                 mb_advantages = advantages[mb_indices]
                 mb_returns = returns[mb_indices]
+                mb_old_values = old_values.flatten()[mb_indices]
+
+                # Normalize observations for ValueNet (Actor handles it internally)
+                if hasattr(self.actor, "state_normalizer"):
+                    mb_obs_norm = self.actor.state_normalizer.normalize(mb_obs)
+                else:
+                    mb_obs_norm = mb_obs
 
                 # Evaluate current policy
                 policy_out = self.actor(mb_obs, mb_actions)
                 new_log_probs = policy_out["log_prob"].squeeze(-1)
                 entropy = policy_out["entropy"].mean()
 
-                new_values = self.value(mb_obs).squeeze(-1)
+                # Get new values (using normalized obs)
+                new_values = self.value(mb_obs_norm).squeeze(-1)
 
                 # Compute ratio
                 ratio = torch.exp(new_log_probs - mb_old_log_probs)
+
+                # Diagnostic metrics
+                with torch.no_grad():
+                    approx_kl = (mb_old_log_probs - new_log_probs).mean().item()
+                    clip_frac = ((ratio - 1.0).abs() > self.clip_range).float().mean().item()
 
                 # PPO clip loss
                 surr1 = ratio * mb_advantages
                 surr2 = torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * mb_advantages
                 policy_loss = -torch.min(surr1, surr2).mean()
 
-                # Value loss
-                value_loss = F.mse_loss(new_values, mb_returns)
+                # Value loss (clipped)
+                vp = new_values
+                v_loss_unclipped = (vp - mb_returns) ** 2
+                v_clipped = mb_old_values + torch.clamp(
+                    vp - mb_old_values,
+                    -self.clip_range,
+                    self.clip_range,
+                )
+                v_loss_clipped = (v_clipped - mb_returns) ** 2
+                v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                value_loss = 0.5 * v_loss_max.mean()
 
                 # Entropy bonus
                 entropy_loss = -self.entropy_coef * entropy
@@ -608,6 +646,8 @@ class PPOTrainer(BaseTrainer):
                 if epoch == 0:
                     total_metrics["policy_loss"] = policy_loss.item()
                     total_metrics["value_loss"] = value_loss.item()
+                    total_metrics["approx_kl"] = approx_kl
+                    total_metrics["clip_frac"] = clip_frac
                     total_metrics["entropy"] = entropy.item()
                     total_metrics["clip_frac"] = ((ratio - 1.0).abs() > self.clip_range).float().mean().item()
 
