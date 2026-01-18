@@ -4,29 +4,30 @@
 
 ### Atari Env
 
-雅达利游戏的默认设置为（Boxing-v5）
+Gym 中的雅达利游戏包含 ALE 命名空间下的一系列环境，v5 版本的默认设置为
 
-+ 观测空间：像素空间
-+ 动作空间：18 个按键
-+ 随机因素：跳帧 、按键粘滞
++ 观测空间：RGB 图像
++ 随机因素：跳帧（frame skip=4） 、按键粘滞（repeat probability=0.25）
 
-这对 RL 建模提出了挑战，首先，这是一个部分可观测环境，当跳帧为 4 时，作出一个决策将获得 4 帧的 RGB 观测，但无法得知确切的 RAM 状态；其次，这是一个随机环境，智能体以 p=0.25 概率重复上一次的行为，此时作出决策无法得到确定性响应。对于前者，我们采取 DQN 的处理方法，取上次决策后获得的 4 帧观测，转为灰度图并下采样为 84x84 尺寸堆叠在一起，试图智能体隐式学习：
+其中，跳帧意味着智能体每作出一个决策，环境将运行 4 帧，且仅返回最后一帧观测，模拟人类玩家反应时间。按键粘滞则意味着以一定概率重复上一次决策，模拟真实硬件条件。尽管雅达利环境是一个确定性环境，即完全由内存状态决定，但按键粘滞引入了随机性，0.25 的重复概率加大了学习难度。此时，IQN 建模回报的分布，捕捉这类随机性，在 ALE/Boxing-v5 环境中取得比 DQN 更好的性能。
+
+
+
+跳帧问题较为困难。首先，RGB 图像为环境的部分观测，缺少速度信息，分数和生命值也需要从屏幕上读取。另外，游戏内存在大量计数器和冷却时间（硬直时间）逻辑，将影响智能体预判敌人行动。幸运地是，由于所指定的 4 个任务视觉对象较少，不会使用 Flickering 闪烁渲染，造成时序不一致性。
+
+其次，跳帧意味着一个决策将影响多帧，而智能体仅能得到最后一帧，造成信息缺失。DQN 的常见处理方法为，取最近获得的 4 帧观测（游戏运行得很快，4 帧其实肉眼难以看出差异），转为灰度图并下采样为 84x84 尺寸堆叠在一起，相当于从环境最近的 16 帧状态中抽帧，并试图智能体从历史观测序列中学习：
 $$
 o_t \to \hat{s}_t \to \hat{Q}(s_t, a_t)
 $$
-假设给定 RAM 状态能唯一确定观测，则给定观测时， $Q(o_t, a_t)=E[G_t\mid O_t=o_t]$ 满足
+当然，神经网络的隐式表达难以解读，不妨考虑观测空间，记观测空间上的价值函数 $Q(o_t, a_t)=E[G_t\mid O_t=o_t]$ ，理想情况下满足
 $$
 Q(o_t, a_t) = E[Q(s_t, a_t)\mid O_t=o_t]
 $$
-这是神经网络实际的拟合目标。然而，当我们试图使用 TD 算法逼近最优 Q 函数时，
-$$
-\theta_{k+1} \gets \theta_k + \alpha \left( r + \gamma \max_{a'} Q_k(o', a') - Q_k(o, a) \right) \nabla_\theta Q_k(o, a)
-$$
-实际上是在 $p(o'\mid s, o, a)$ 上采样计算期望，得到的是不动点
-$$
-Q(o, a) = E_{S_t}\left[E_{O_{t+1}}[r + \gamma \max_{a'} Q(o', a')\mid S_t]\large\mid O_t=o, A_t=a\right]
-$$
-由 Jensen 不等式，信息泄露将导致 Q-learning 中在 max 算符作用后高估 Q 值。
+遗憾的是，此处的历史 RGB 序列并不由当前 RAM 状态完全决定，该公式不成立，通过估计 Q 的分布不能直接解决这个问题。尽管如此，还是能尝试从观测序列中尝试估计当前 RAM 状态。然而，上述得种种因素将导致环境噪声较大。在高方差条件下，TD 算法得收敛条件难以保障，容易出现振荡不收敛得情况。
+
+在实际训练中发现，智能体的学习存在明显的两级分化现象：在早期就能不断提升回报的训练中，智能体往往最终能达到较高水平；若在一段时间内不见起色，则将训练时间延长若干倍后，任务的回报仍然在原水平振荡。可以认为，return 曲线的振荡程度一定程度上反应该智能体的学习潜力。
+
+
 
 ### Implementation 
 
@@ -61,17 +62,44 @@ class QNet(nn.Module):
 
 为获得平滑的更新，对 Q target 网络进行指数平滑更新。为抑制高估 Q 值现象，使用 Double DQN 计算 TD 目标。
 
+
+
 #### Boltzmann Policy & soft Q-learning
 
-使用玻尔兹曼策略保留 Q 值分布信息对策略的影响，并使用温度衰减让智能体从前期探索转为后期优先选择高 Q 值动作。
+使用玻尔兹曼策略保留 Q 值分布信息对策略的影响，即 $\pi(a|s) = \frac{e^{Q(o)/\alpha}}{Z}$ 。为保证数值稳定性，分子分母同除最大 $Q(o)$ 。使用线性温度衰减让智能体从前期探索转为后期优先选择高 Q 值动作。
+
+```python
+with torch.no_grad():
+    logits = self.q(obs) / alpha
+    logits -= logits.max(1, keepdim=True).values
+    probs = torch.softmax(logits, dim=1)
+    actions = torch.multinomial(probs, 1).squeeze(1)
+```
+
+
 
 使用 soft Q-learning，即将 max 算符替换为 softmax 算符，缓解 max 带来的系统偏差。
 
-### IQN
+```
+entropy = -(pi * (pi + 1e-8).log()).sum(1)
+v_next = (pi * q_next_t).sum(1) - alpha * entropy
+```
 
-使用 IQN 将改善 max 带来的高估问题
+
+
+#### IQN
+
+理论上，使用 IQN 将改善 max 带来的 Q 值高估问题。在雅达利环境中，则可以视为对各种不确定性因素进行建模处理的手段，降低 DQN 对真实 Q 值得估计难度。
+
+
 
 ### Performance 
+
+#### Boxing-v5
+
+拳击任务的敌人攻击性强，喜欢追身殴打，奖励稠密，学习较为顺利。当发现智能体进入瓶颈期或不时掉点，往往降低学习率就能更上一层楼，但需要更长的训练时间。
+
+> 对人类玩家并不友好，被堵在墙角暴打，只能拿到 13 分。
 
 训练配置如下，请确保运行设备具有至少 30 GB 内存和 2.5 GB 显存（buffer 占用较多内存）
 
@@ -108,7 +136,7 @@ training:
   grad_clip: 10.0
   updates_per_step: 1           # gradient updates per env step (aggregate)
   use_amp: true                 # enable CUDA AMP (mixed precision)
-  reward_clip: null      # optional training-time reward clipping; set to null to disable
+  reward_clip: null      		# optional training-time reward clipping; set to null to disable
   target_clip: null             # optional target clamp magnitude; set to null to disable
 
 # Logging (step-based intervals)
@@ -126,12 +154,42 @@ parallel:
   enable_cpu_monitor: true      # reserved flag; metrics are always collected
 ```
 
-在 Boxing-v5 环境中能达到 80 分以上
+> 由于训练吃 CPU 和内存，训练时长受 OS 调度的影响很大，请尽量避免挂后台刷剧。
+
+
+
+DQN 在 Boxing-v5 环境中能达到 80 分以上的表现
 
 ![](..\source\Boxing-v5.png)
 
-批次大小和每步进行网络更新次数将影响训练速度。
+在可怜的几次超参数实验中，发现批次大小和 updates_per_step 将影响训练速度。（调一调能从 60 上升到 80 分）
 
-使用 IQN 后，通常能取得比 DQN 更好的效果
 
-<img src="..\source\IQN-whole.png" style="zoom:50%;" />
+
+使用 IQN 后，能取得比 DQN 更好的效果，在 AEL/Boxing-v5 环境中达到 100 分。
+
+<img src="..\source\IQN.png"  />
+
+#### Pong-v5
+
+乒乓球任务尽管动作空间小，探索简单，但仍然学习困难。打乒乓球时，发现智能体往往从 -21 分上升到 0 分就停滞不前，原因是此时处于相持阶段，接不好球就会丢分，很难尝试主动打怪球的行动。
+
+> 由于 git merge 时的失误，这个权重遗失了
+
+![](D:\sjtu_stuff\RL\Final\source\Pong-v5.png)
+
+首先，敌人动得很频繁，乒乓队存在碰撞反弹，而帧跳跃使得采样频率远小于环境变化速度，导致信息损失较为严重，从帧堆叠中推测的运动和真实运动的差异较大。如下图所示，球拍已经上下走位两次，但观测帧仅获得最后一帧结果。另外，动作粘滞使得在 4 帧中被执行的动作完全不确定，因而 DQN 更趋向于学习一个保守策略。
+
+![](D:\sjtu_stuff\RL\Final\source\Pong-frame.png)
+
+> 在剩下两个环境中，DQN 始终在最低分蠕动，在此不做展示。
+
+### RAM mode
+
+在雅达利游戏中，可以指定将内存状态作为观测空间。除了获得完全信息外，128 维的 RAM 状态还能节约硬件资源。然而，两者的表征学习难度不同，难以设置合适参数量的网络进行对比。经过粗略的实验发现，当使用两层 MLP 即参数量约为 CNN 的 0.25 倍时，就能够实现略高于像素观测的表现。
+
+
+
+## Policy-based on MUJOCO
+
+MuJoCo 环境指定了 4 个多关节机器人的行走类任务，动作空间为各关节扭矩，观测空间为机器人位姿及各节点速度，除去接触力未知外，均为完全观测。整体而言，这四个任务不算困难，智能体只需要掌握一种行走模式，就能在环境交互中得到单调上升的分数。

@@ -10,6 +10,10 @@ env:
 network:
   conv_channels: [32, 64, 64]
   fc_hidden: 512
+  # MLP backbone defaults for RAM mode (stacked 4x128 bytes → 512-dim input).
+  # Use wider/deeper MLP so parameter count is comparable to the CNN stack.
+  mlp_hidden: 768
+  mlp_layers: 3
 
 # Training settings
 training:

@@ -27,6 +27,8 @@ dependencies = [
     "tensorboard",
     # Utilities
     "tqdm",
+    "opencv-python>=4.11.0.86",
+    "matplotlib>=3.10.8",
 ]
 
 [project.optional-dependencies]
